@@ -2,9 +2,11 @@ package health
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -36,7 +38,40 @@ type Health struct {
 
 func Handler(checkers map[string]Checker) http.Handler {
 	f := func(w http.ResponseWriter, r *http.Request) {
+		healths := make([]*Health, 0, len(checkers))
 
+		var (
+			wg     sync.WaitGroup
+			status = http.StatusOK
+		)
+		for name, checker := range checkers {
+			wg.Add(1)
+			go func(name string, checker Checker) {
+				defer wg.Done()
+
+				health := &Health{
+					Name:  name,
+					State: string(Healthy),
+					Time:  time.Now(),
+				}
+
+				err := doCheck(checker)
+				if err != nil {
+					health.State = string(Unhealthy)
+					health.Error = err.Error()
+
+					status = http.StatusInternalServerError
+				}
+				healths = append(healths, health)
+			}(name, checker)
+		}
+		wg.Wait()
+
+		data, _ := json.Marshal(healths)
+		w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(status)
+		w.Write(data)
 	}
 	return http.HandlerFunc(f)
 }
