@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 )
 
@@ -22,6 +23,22 @@ type CheckerFunc func() error
 
 func (f CheckerFunc) Check() error {
 	return f()
+}
+
+type Health struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
+
+	Time time.Time `json:"time"`
+
+	Error string `json:"error,omitempty"`
+}
+
+func Handler(checkers map[string]Checker) http.Handler {
+	f := func(w http.ResponseWriter, r *http.Request) {
+
+	}
+	return http.HandlerFunc(f)
 }
 
 func doCheck(checker Checker) error {
