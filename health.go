@@ -3,10 +3,8 @@ package health
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 )
 
@@ -28,7 +26,7 @@ type Checker interface {
 // the use of ordinary functions to perform a check.
 type CheckerFunc func() error
 
-// Check calls f
+// Check calls f.
 func (f CheckerFunc) Check() error {
 	return f()
 }
@@ -45,19 +43,14 @@ type Health struct {
 
 // Handler returns an http.Handler that handles health check requests.
 func Handler(checkers map[string]Checker) http.Handler {
-	f := func(w http.ResponseWriter, r *http.Request) {
-		healths := make([]*Health, 0, len(checkers))
-
+	f := func(w http.ResponseWriter, req *http.Request) {
 		var (
-			wg     sync.WaitGroup
-			status = http.StatusOK
+			status   = http.StatusOK
+			healthCh = make(chan Health, len(checkers))
 		)
 		for name, checker := range checkers {
-			wg.Add(1)
 			go func(name string, checker Checker) {
-				defer wg.Done()
-
-				health := &Health{
+				health := Health{
 					Name:  name,
 					State: string(Healthy),
 					Time:  time.Now(),
@@ -70,10 +63,15 @@ func Handler(checkers map[string]Checker) http.Handler {
 
 					status = http.StatusInternalServerError
 				}
-				healths = append(healths, health)
+				healthCh <- health
 			}(name, checker)
 		}
-		wg.Wait()
+
+		healths := make([]Health, 0, len(checkers))
+		for len(healths) != cap(healths) {
+			healths = append(healths, <-healthCh)
+		}
+		close(healthCh)
 
 		data, _ := json.Marshal(healths)
 		w.Header().Set("Content-Length", fmt.Sprint(len(data)))
@@ -87,7 +85,7 @@ func Handler(checkers map[string]Checker) http.Handler {
 func doCheck(checker Checker) error {
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
-		5*time.Second,
+		3*time.Second,
 	)
 	defer cancel()
 
@@ -97,7 +95,7 @@ func doCheck(checker Checker) error {
 			recv := recover()
 			if recv != nil {
 				switch t := recv.(type) {
-				case fmt.Stringer:
+				case string, error, fmt.Stringer:
 					errs <- fmt.Errorf("%s", t)
 				default:
 					panic(t)
@@ -110,7 +108,7 @@ func doCheck(checker Checker) error {
 		select {
 		case errs <- checker.Check():
 		case <-ctx.Done():
-			errs <- errors.New("timeout exceeded")
+			errs <- ctx.Err()
 		}
 	}()
 
