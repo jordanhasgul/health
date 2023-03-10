@@ -10,23 +10,30 @@ import (
 	"time"
 )
 
+// State represents the state of a service dependency.
 type State string
 
 const (
-	Healthy   State = "healthy"
-	Unhealthy State = "unhealthy"
+	Healthy   State = "healthy"   // A healthy service dependency.
+	Unhealthy State = "unhealthy" // An unhealthy service dependency.
 )
 
+// Checker performs a health check on a service dependency. Calls to
+// Check() must be safe for concurrent access via multiple goroutines.
 type Checker interface {
 	Check() error
 }
 
+// CheckerFunc is an adapter, which is itself a Checker, that allows
+// the use of ordinary functions to perform a check.
 type CheckerFunc func() error
 
+// Check calls f
 func (f CheckerFunc) Check() error {
 	return f()
 }
 
+// Health represents the health of a service dependency.
 type Health struct {
 	Name  string `json:"name"`
 	State string `json:"state"`
@@ -36,6 +43,7 @@ type Health struct {
 	Error string `json:"error,omitempty"`
 }
 
+// Handler returns an http.Handler that handles health check requests.
 func Handler(checkers map[string]Checker) http.Handler {
 	f := func(w http.ResponseWriter, r *http.Request) {
 		healths := make([]*Health, 0, len(checkers))
