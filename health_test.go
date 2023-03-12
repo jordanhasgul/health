@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHealthHandler(t *testing.T) {
+func TestHandler(t *testing.T) {
 	t.Run("without-checks", func(t *testing.T) {
 		checkers := make(map[string]Checker)
 
@@ -42,7 +42,7 @@ func TestHealthHandler(t *testing.T) {
 			panic("panic")
 		})
 		checkers["check4"] = CheckerFunc(func() error {
-			time.Sleep(5 * time.Second)
+			<-time.After(5 * time.Second)
 			return nil
 		})
 
@@ -61,10 +61,21 @@ func TestHealthHandler(t *testing.T) {
 		body, err := io.ReadAll(resp.Body)
 		require.Nil(t, err)
 
-		fmt.Println(string(body))
-
-		var healths []*Health
+		var healths []Health
 		err = json.Unmarshal(body, &healths)
 		require.Nil(t, err)
+
+		errorMsgs := map[string]string{
+			"check1": "",
+			"check2": "error",
+			"check3": "panic",
+			"check4": "context deadline exceeded",
+		}
+		for _, health := range healths {
+			fmt.Println(health)
+			errorMsg := errorMsgs[health.Name]
+			require.Equal(t, errorMsg, health.Error)
+		}
+
 	})
 }
