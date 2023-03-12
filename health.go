@@ -14,6 +14,8 @@ type State string
 const (
 	Healthy   State = "healthy"   // A healthy service dependency.
 	Unhealthy State = "unhealthy" // An unhealthy service dependency.
+
+	maxGoroutines int = 5
 )
 
 // Checker performs a health check on a service dependency. Calls to
@@ -45,10 +47,13 @@ type Health struct {
 func Handler(checkers map[string]Checker) http.Handler {
 	f := func(w http.ResponseWriter, req *http.Request) {
 		var (
-			status   = http.StatusOK
+			status = http.StatusOK
+
 			healthCh = make(chan Health, len(checkers))
+			guardCh  = make(chan struct{}, maxGoroutines)
 		)
 		for name, checker := range checkers {
+			guardCh <- struct{}{}
 			go func(name string, checker Checker) {
 				health := Health{
 					Name:  name,
@@ -64,14 +69,17 @@ func Handler(checkers map[string]Checker) http.Handler {
 					status = http.StatusInternalServerError
 				}
 				healthCh <- health
+
+				<-guardCh
 			}(name, checker)
 		}
+		defer close(healthCh)
+		defer close(guardCh)
 
 		healths := make([]Health, 0, len(checkers))
 		for len(healths) != cap(healths) {
 			healths = append(healths, <-healthCh)
 		}
-		close(healthCh)
 
 		data, _ := json.Marshal(healths)
 		w.Header().Set("Content-Length", fmt.Sprint(len(data)))
