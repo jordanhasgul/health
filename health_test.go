@@ -3,7 +3,6 @@ package health
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -72,7 +71,6 @@ func TestHandler(t *testing.T) {
 			"check4": "context deadline exceeded",
 		}
 		for _, health := range healths {
-			fmt.Println(health)
 			errorMsg := errorMsgs[health.Name]
 			require.Equal(t, errorMsg, health.Error)
 		}
