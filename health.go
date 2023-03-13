@@ -49,12 +49,16 @@ func Handler(checkers map[string]Checker) http.Handler {
 		var (
 			status = http.StatusOK
 
+			healths  = make([]Health, 0, len(checkers))
 			healthCh = make(chan Health, len(checkers))
-			guardCh  = make(chan struct{}, maxGoroutines)
+
+			goroutineCh = make(chan struct{}, maxGoroutines)
 		)
 		for name, checker := range checkers {
-			guardCh <- struct{}{}
+			goroutineCh <- struct{}{}
 			go func(name string, checker Checker) {
+				defer func() { <-goroutineCh }()
+
 				health := Health{
 					Name:  name,
 					State: string(Healthy),
@@ -69,14 +73,9 @@ func Handler(checkers map[string]Checker) http.Handler {
 					status = http.StatusInternalServerError
 				}
 				healthCh <- health
-
-				<-guardCh
 			}(name, checker)
 		}
-		defer close(healthCh)
-		defer close(guardCh)
 
-		healths := make([]Health, 0, len(checkers))
 		for len(healths) != cap(healths) {
 			healths = append(healths, <-healthCh)
 		}
