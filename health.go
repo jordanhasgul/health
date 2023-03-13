@@ -112,12 +112,13 @@ func doCheck(checker Checker) error {
 			close(errs)
 		}()
 
-		select {
-		case errs <- checker.Check():
-		case <-ctx.Done():
-			errs <- ctx.Err()
-		}
+		errs <- checker.Check()
 	}()
 
-	return <-errs
+	select {
+	case err := <-errs:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
